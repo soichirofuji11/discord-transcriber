@@ -30,7 +30,7 @@ def main():
     translator = None
     if config.enable_translation:
         from plugins.translator import Translator
-        translator = Translator(config)
+        translator = Translator(config, session)
         print(f"[Translator] Enabled ({config.translation_model})")
 
     # Optional: summarizer
@@ -56,6 +56,7 @@ def main():
                         "type": "translation",
                         "text": item["translated"],
                         "original": item["original"],
+                        "msg_id": item["msg_id"],
                         "lang": "ja",
                     })
             await asyncio.sleep(0.3)
@@ -63,20 +64,27 @@ def main():
     if translator:
         register_startup_task(translation_loop)
 
+    _msg_id_counter = [0]
+
     def on_text(result):
         """Called from the processing thread."""
         tag = "FINAL" if result["type"] == "final" else "partial"
         latency = result.get("latency_ms", "?")
         audio_sec = result.get("audio_sec", "?")
         print(f"[{tag}] ({latency}ms, {audio_sec}s buf) {result['text']}")
+
+        # Assign a unique ID to final messages for translation pairing
+        if result["type"] == "final":
+            _msg_id_counter[0] += 1
+            result["msg_id"] = _msg_id_counter[0]
+
         enqueue_message(result)
 
         # Store final text in session
         if result["type"] == "final":
             session.add_entry(result["text"], speaker=result.get("speaker", ""))
-            # Queue for translation
             if translator:
-                translator.add_to_batch(result["text"])
+                translator.add_to_batch(result["text"], msg_id=result["msg_id"])
 
     # Initialize modules
     capture = AudioCapture(config, audio_queue)

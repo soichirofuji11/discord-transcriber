@@ -212,6 +212,7 @@
         }
         const el = document.createElement('div');
         el.className = 'line final';
+        if (data.msg_id) el.dataset.msgId = data.msg_id;
         let content = '';
         if (data.speaker) {
           content += `<span class="speaker-label">${escHtml(data.speaker)}</span>`;
@@ -229,7 +230,22 @@
         const el = document.createElement('div');
         el.className = 'line translation';
         el.textContent = data.text;
-        container.appendChild(el);
+        // Insert after the matching final line
+        const target = data.msg_id
+          ? container.querySelector(`[data-msg-id="${data.msg_id}"]`)
+          : null;
+        if (target) {
+          // Insert right after target (or after target's existing translation)
+          let insertAfter = target;
+          while (insertAfter.nextSibling &&
+                 insertAfter.nextSibling.classList &&
+                 insertAfter.nextSibling.classList.contains('translation')) {
+            insertAfter = insertAfter.nextSibling;
+          }
+          insertAfter.after(el);
+        } else {
+          container.appendChild(el);
+        }
       }
 
       // Enforce 25-line limit

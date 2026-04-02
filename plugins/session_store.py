@@ -60,6 +60,14 @@ class Session:
     def get_entry_count(self) -> int:
         return len(self.entries)
 
+    def get_recent_texts(self, n: int = 5, exclude_last: int = 0) -> list[str]:
+        """Return the most recent n entry texts, optionally excluding the last k."""
+        end = len(self.entries) - exclude_last
+        if end <= 0:
+            return []
+        start = max(0, end - n)
+        return [e.text for e in self.entries[start:end]]
+
     def save(self, output_dir: str = "sessions"):
         Path(output_dir).mkdir(exist_ok=True)
         path = Path(output_dir) / f"{self.session_id}.json"

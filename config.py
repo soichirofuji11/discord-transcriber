@@ -10,11 +10,11 @@ load_dotenv()
 @dataclass
 class Config:
     # --- STT Model ---
-    model_size: str = "large-v3"
+    model_size: str = "distil-large-v3"
     device: str = "cuda"
     compute_type: str = "float16"
     language: str = "en"
-    beam_size: int = 5
+    beam_size: int = 1
 
     # --- Audio Capture ---
     sample_rate: int = 16000
@@ -24,7 +24,7 @@ class Config:
     # --- VAD ---
     vad_threshold: float = 0.5
     min_speech_duration_ms: int = 250
-    min_silence_duration_ms: int = 500
+    min_silence_duration_ms: int = 1000
 
     # --- Buffer ---
     max_buffer_duration_sec: float = 30.0
@@ -41,13 +41,14 @@ class Config:
     # --- Translation Plugin ---
     enable_translation: bool = False
     gemini_api_key: str = ""
-    translation_model: str = "gemini-2.5-flash-lite-preview-06-17"
+    translation_model: str = "gemini-3.1-flash-lite-preview"
     translation_target_lang: str = "ja"
     translation_batch_interval_sec: float = 1.5
+    translation_context_lines: int = 5
 
     # --- Summary Plugin ---
     enable_summary: bool = False
-    summary_model: str = "gemini-2.5-flash-preview-05-20"
+    summary_model: str = "gemini-3-flash-preview"
     sessions_dir: str = "sessions"
 
     # --- Diarization Plugin ---
