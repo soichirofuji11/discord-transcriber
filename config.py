@@ -1,20 +1,25 @@
 import argparse
+import os
 from dataclasses import dataclass
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass
 class Config:
     # --- STT Model ---
-    model_size: str = "large-v3"           # or "distil-large-v3"
+    model_size: str = "large-v3"
     device: str = "cuda"
-    compute_type: str = "float16"          # float16 for RTX 5070 Ti
+    compute_type: str = "float16"
     language: str = "en"
     beam_size: int = 5
 
     # --- Audio Capture ---
     sample_rate: int = 16000
     channels: int = 1
-    block_duration_ms: int = 100           # 100ms chunks
+    block_duration_ms: int = 100
 
     # --- VAD ---
     vad_threshold: float = 0.5
@@ -33,10 +38,22 @@ class Config:
     host: str = "127.0.0.1"
     port: int = 8765
 
-    # --- Plugins ---
+    # --- Translation Plugin ---
     enable_translation: bool = False
+    gemini_api_key: str = ""
+    translation_model: str = "gemini-2.5-flash-lite-preview-06-17"
     translation_target_lang: str = "ja"
+    translation_batch_interval_sec: float = 1.5
+
+    # --- Summary Plugin ---
     enable_summary: bool = False
+    summary_model: str = "gemini-2.5-flash-preview-05-20"
+    sessions_dir: str = "sessions"
+
+    # --- Diarization Plugin ---
+    enable_diarization: bool = False
+    hf_token: str = ""
+    max_speakers: int = 5
 
     @classmethod
     def from_args(cls) -> "Config":
@@ -62,7 +79,17 @@ class Config:
                             help="Min silence to trigger endpoint (ms)")
         parser.add_argument("--port", type=int, default=cls.port,
                             help="WebSocket server port")
+        parser.add_argument("--translate", action="store_true",
+                            help="Enable English→Japanese translation")
+        parser.add_argument("--summarize", action="store_true",
+                            help="Enable summary feature")
+        parser.add_argument("--diarize", action="store_true",
+                            help="Enable speaker diarization")
         args = parser.parse_args()
+
+        # Environment variables
+        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+        hf_token = os.environ.get("HF_TOKEN", "")
 
         # --fast preset defaults
         if args.fast:
@@ -74,6 +101,21 @@ class Config:
             beam_size = args.beam_size if args.beam_size is not None else cls.beam_size
             interval = args.interval if args.interval is not None else cls.transcribe_interval_sec
 
+        # Auto-disable plugins if API keys missing
+        enable_translation = args.translate
+        enable_summary = args.summarize
+        enable_diarization = args.diarize
+
+        if enable_translation and not gemini_key:
+            print("[Config] GEMINI_API_KEY not set -translation disabled")
+            enable_translation = False
+        if enable_summary and not gemini_key:
+            print("[Config] GEMINI_API_KEY not set -summary disabled")
+            enable_summary = False
+        if enable_diarization and not hf_token:
+            print("[Config] HF_TOKEN not set -diarization disabled")
+            enable_diarization = False
+
         return cls(
             model_size=model,
             beam_size=beam_size,
@@ -84,4 +126,9 @@ class Config:
             context_duration_sec=args.context_duration,
             min_silence_duration_ms=args.min_silence,
             port=args.port,
+            enable_translation=enable_translation,
+            gemini_api_key=gemini_key,
+            enable_summary=enable_summary,
+            enable_diarization=enable_diarization,
+            hf_token=hf_token,
         )
