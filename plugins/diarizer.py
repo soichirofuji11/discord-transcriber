@@ -28,9 +28,13 @@ from pyannote.audio import Pipeline  # noqa: E402
 from config import Config
 
 
+_MAX_HISTORY_SEC = 120  # Keep up to 2 minutes of audio for cross-segment consistency
+
+
 class Diarizer:
     def __init__(self, config: Config):
         self.config = config
+        self.sample_rate = config.sample_rate
         print("[Diarizer] Loading pyannote pipeline...")
         self.pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
@@ -52,7 +56,17 @@ class Diarizer:
             self.pipeline.to(torch.device("cpu"))
             print("[Diarizer] Pipeline loaded (CPU)")
 
-    def diarize(self, audio: np.ndarray, sample_rate: int = 16000) -> list[dict]:
+        # Rolling audio history for cross-segment speaker consistency
+        self._history = np.array([], dtype=np.float32)
+
+    def _append_history(self, audio: np.ndarray):
+        """Add audio to rolling history buffer, trimming to max length."""
+        self._history = np.concatenate([self._history, audio])
+        max_samples = int(_MAX_HISTORY_SEC * self.sample_rate)
+        if len(self._history) > max_samples:
+            self._history = self._history[-max_samples:]
+
+    def diarize(self, audio: np.ndarray) -> list[dict]:
         """
         Run speaker diarization on an audio buffer.
 
@@ -60,10 +74,9 @@ class Diarizer:
             [{"speaker": "SPEAKER_00", "start": 0.0, "end": 2.5}, ...]
         """
         waveform = torch.from_numpy(audio).unsqueeze(0).float()
-        input_data = {"waveform": waveform, "sample_rate": sample_rate}
+        input_data = {"waveform": waveform, "sample_rate": self.sample_rate}
 
         result = self.pipeline(input_data)
-        # pyannote 4.x returns DiarizeOutput with .speaker_diarization attribute
         diarization = getattr(result, "speaker_diarization", result)
 
         segments = []
@@ -75,20 +88,32 @@ class Diarizer:
             })
         return segments
 
-    def get_dominant_speaker(
-        self, audio: np.ndarray, sample_rate: int = 16000
-    ) -> str:
+    def get_speaker_for_segment(self, segment_audio: np.ndarray) -> str:
         """
-        Run diarization and return the speaker who talked the most.
-        Used for assigning a single speaker label to an endpoint utterance.
+        Append segment to history, diarize the full history,
+        and return the dominant speaker in the last segment's time range.
+        This gives pyannote enough context to distinguish speakers consistently.
         """
-        segments = self.diarize(audio, sample_rate)
+        history_start_sec = len(self._history) / self.sample_rate
+        self._append_history(segment_audio)
+        segment_end_sec = len(self._history) / self.sample_rate
+
+        # Diarize the full history
+        segments = self.diarize(self._history)
         if not segments:
             return ""
 
+        # Find speakers active in the time range of the new segment
         durations: dict[str, float] = {}
         for seg in segments:
-            dur = seg["end"] - seg["start"]
-            durations[seg["speaker"]] = durations.get(seg["speaker"], 0) + dur
+            # Overlap with the new segment's time range
+            overlap_start = max(seg["start"], history_start_sec)
+            overlap_end = min(seg["end"], segment_end_sec)
+            if overlap_end > overlap_start:
+                dur = overlap_end - overlap_start
+                durations[seg["speaker"]] = durations.get(seg["speaker"], 0) + dur
+
+        if not durations:
+            return ""
 
         return max(durations, key=durations.get)

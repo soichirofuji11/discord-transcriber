@@ -104,6 +104,10 @@ class Transcriber:
 
     def _handle_endpoint(self, words: list[str], meta: dict):
         """Emit the full utterance as one final line, then reset."""
+        # Save audio snapshot BEFORE callback (callback reads it for diarization)
+        with self._lock:
+            self.last_endpoint_audio = self._buf.copy() if len(self._buf) > 0 else None
+
         if words:
             self.on_text({"type": "final", "text": " ".join(words), **meta})
 
@@ -112,8 +116,6 @@ class Transcriber:
         self._emitted = []
         self._prev = []
         with self._lock:
-            # Save audio snapshot for diarization before clearing
-            self.last_endpoint_audio = self._buf.copy() if len(self._buf) > 0 else None
             self._buf = np.array([], dtype=np.float32)
             self._dirty = False
 

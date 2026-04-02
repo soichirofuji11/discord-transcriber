@@ -69,7 +69,7 @@ def main():
                     msg_id, audio = diarize_queue.get_nowait()
                     # Run diarization in a thread to avoid blocking the event loop
                     speaker = await asyncio.to_thread(
-                        diarizer.get_dominant_speaker, audio, config.sample_rate
+                        diarizer.get_speaker_for_segment, audio
                     )
                     if speaker:
                         print(f"[Diarizer] msg_id={msg_id} -> {speaker}")
@@ -167,7 +167,7 @@ def main():
     print(f"Open http://{config.host}:{config.port} in your browser")
 
     # Run FastAPI server (blocks until shutdown)
-    uvicorn.run(app, host=config.host, port=config.port, log_level="warning")
+    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
 
     # Cleanup
     stop_event.set()
