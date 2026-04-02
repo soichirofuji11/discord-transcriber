@@ -1,7 +1,13 @@
 """Discord VC real-time transcription tool — entry point."""
 import asyncio
 import threading
+import warnings
 from queue import Queue
+
+# Suppress noisy warnings that don't affect functionality
+warnings.filterwarnings("ignore", message=".*torchcodec.*")
+warnings.filterwarnings("ignore", message=".*triton.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
 
 import uvicorn
 
