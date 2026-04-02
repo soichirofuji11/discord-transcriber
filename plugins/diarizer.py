@@ -36,8 +36,18 @@ class Diarizer:
             "pyannote/speaker-diarization-3.1",
             token=config.hf_token,
         )
-        self.pipeline.to(torch.device("cuda"))
-        print("[Diarizer] Pipeline loaded")
+        # Try GPU first, fall back to CPU if CUDA kernel is not available
+        # (e.g. RTX 5070 Ti sm_120 may not be supported by all sub-models)
+        try:
+            self.pipeline.to(torch.device("cuda"))
+            print("[Diarizer] Pipeline loaded (GPU)")
+        except RuntimeError as e:
+            if "no kernel image" in str(e):
+                print(f"[Diarizer] GPU not supported for this model, using CPU")
+                self.pipeline.to(torch.device("cpu"))
+                print("[Diarizer] Pipeline loaded (CPU)")
+            else:
+                raise
 
     def diarize(self, audio: np.ndarray, sample_rate: int = 16000) -> list[dict]:
         """
@@ -49,7 +59,9 @@ class Diarizer:
         waveform = torch.from_numpy(audio).unsqueeze(0).float()
         input_data = {"waveform": waveform, "sample_rate": sample_rate}
 
-        diarization = self.pipeline(input_data)
+        result = self.pipeline(input_data)
+        # pyannote 4.x returns DiarizeOutput with .speaker_diarization attribute
+        diarization = getattr(result, "speaker_diarization", result)
 
         segments = []
         for turn, _, speaker in diarization.itertracks(yield_label=True):
