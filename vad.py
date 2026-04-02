@@ -1,8 +1,11 @@
 import numpy as np
 import torch
-from silero_vad import load_silero_vad, get_speech_timestamps
+from silero_vad import load_silero_vad
 
 from config import Config
+
+# Silero VAD requires exactly 512 samples per call at 16kHz
+_VAD_CHUNK_SIZE = 512
 
 
 class VADProcessor:
@@ -13,31 +16,39 @@ class VADProcessor:
         print("[VAD] Model loaded")
         self.is_speaking = False
         self.silence_samples = 0
+        self._remainder = np.array([], dtype=np.float32)
 
     def reset(self):
         """Reset VAD state."""
         self.is_speaking = False
         self.silence_samples = 0
+        self._remainder = np.array([], dtype=np.float32)
         self.model.reset_states()
 
     def process(self, audio_chunk: np.ndarray) -> dict:
         """
-        Process an audio chunk and return VAD result.
-
-        Args:
-            audio_chunk: float32 mono audio at config.sample_rate
-
-        Returns:
-            {
-                "has_speech": bool,
-                "speech_prob": float,
-                "is_endpoint": bool,
-            }
+        Process an audio chunk (any size) and return VAD result.
+        Internally splits into 512-sample windows for Silero VAD.
         """
-        tensor = torch.from_numpy(audio_chunk).float()
-        speech_prob = self.model(tensor, self.config.sample_rate).item()
+        audio = np.concatenate([self._remainder, audio_chunk])
 
-        has_speech = speech_prob >= self.config.vad_threshold
+        has_speech = False
+        speech_prob = 0.0
+
+        # Process all complete 512-sample windows
+        pos = 0
+        while pos + _VAD_CHUNK_SIZE <= len(audio):
+            window = audio[pos : pos + _VAD_CHUNK_SIZE]
+            tensor = torch.from_numpy(window).float()
+            prob = self.model(tensor, self.config.sample_rate).item()
+            if prob > speech_prob:
+                speech_prob = prob
+            if prob >= self.config.vad_threshold:
+                has_speech = True
+            pos += _VAD_CHUNK_SIZE
+
+        # Save leftover samples for next call
+        self._remainder = audio[pos:]
 
         if has_speech:
             self.is_speaking = True

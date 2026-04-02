@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discord Transcriber</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 18px;
+    padding: 16px;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  #transcript {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 6px;
+    overflow: hidden;
+  }
+  .line {
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: opacity 1s ease-out;
+    line-height: 1.5;
+  }
+  .partial {
+    color: #999;
+    font-style: italic;
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .final {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .fading {
+    opacity: 0;
+  }
+  #status {
+    position: fixed;
+    top: 8px;
+    right: 12px;
+    font-size: 12px;
+    color: #666;
+  }
+  #status.connected { color: #4a4; }
+  #status.disconnected { color: #a44; }
+</style>
+</head>
+<body>
+  <div id="status" class="disconnected">disconnected</div>
+  <div id="transcript"></div>
+
+  <script>
+    const container = document.getElementById('transcript');
+    const statusEl = document.getElementById('status');
+    const MAX_LINES = 12;
+    const FADE_AFTER_SEC = 15;
+
+    let partialEl = null;
+    let ws = null;
+
+    function connect() {
+      ws = new WebSocket(`ws://${location.host}/ws`);
+
+      ws.onopen = () => {
+        statusEl.textContent = 'connected';
+        statusEl.className = 'connected';
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = 'disconnected';
+        statusEl.className = 'disconnected';
+        setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'partial') {
+          if (!partialEl) {
+            partialEl = document.createElement('div');
+            partialEl.className = 'line partial';
+            container.appendChild(partialEl);
+          }
+          partialEl.textContent = data.text;
+        } else if (data.type === 'final') {
+          // Replace partial with final
+          if (partialEl) {
+            partialEl.remove();
+            partialEl = null;
+          }
+          const el = document.createElement('div');
+          el.className = 'line final';
+          el.textContent = data.text;
+          container.appendChild(el);
+
+          // Auto-fade after timeout
+          setTimeout(() => {
+            el.classList.add('fading');
+            setTimeout(() => el.remove(), 1000);
+          }, FADE_AFTER_SEC * 1000);
+        }
+
+        // Trim old lines
+        while (container.children.length > MAX_LINES) {
+          container.firstChild.remove();
+        }
+
+        // Scroll into view
+        container.scrollTop = container.scrollHeight;
+      };
+    }
+
+    connect();
+  </script>
+</body>
+</html>
