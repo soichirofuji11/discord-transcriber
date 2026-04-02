@@ -36,18 +36,21 @@ class Diarizer:
             "pyannote/speaker-diarization-3.1",
             token=config.hf_token,
         )
-        # Try GPU first, fall back to CPU if CUDA kernel is not available
-        # (e.g. RTX 5070 Ti sm_120 may not be supported by all sub-models)
-        try:
-            self.pipeline.to(torch.device("cuda"))
-            print("[Diarizer] Pipeline loaded (GPU)")
-        except RuntimeError as e:
-            if "no kernel image" in str(e):
-                print(f"[Diarizer] GPU not supported for this model, using CPU")
-                self.pipeline.to(torch.device("cpu"))
-                print("[Diarizer] Pipeline loaded (CPU)")
-            else:
-                raise
+        device = config.diarization_device
+        if device == "cuda":
+            try:
+                self.pipeline.to(torch.device("cuda"))
+                print("[Diarizer] Pipeline loaded (GPU)")
+            except RuntimeError as e:
+                if "no kernel image" in str(e):
+                    print("[Diarizer] GPU not supported, falling back to CPU")
+                    self.pipeline.to(torch.device("cpu"))
+                    print("[Diarizer] Pipeline loaded (CPU)")
+                else:
+                    raise
+        else:
+            self.pipeline.to(torch.device("cpu"))
+            print("[Diarizer] Pipeline loaded (CPU)")
 
     def diarize(self, audio: np.ndarray, sample_rate: int = 16000) -> list[dict]:
         """

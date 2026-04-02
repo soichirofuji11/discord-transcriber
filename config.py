@@ -55,6 +55,7 @@ class Config:
     enable_diarization: bool = False
     hf_token: str = ""
     max_speakers: int = 5
+    diarization_device: str = "cpu"  # "cuda" or "cpu" (sm_120 lacks kernel support)
 
     @classmethod
     def from_args(cls) -> "Config":
