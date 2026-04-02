@@ -1,6 +1,6 @@
 """
-Speaker diarization plugin — assigns speaker labels to transcript segments.
-Uses pyannote/speaker-diarization-3.1 (requires HF token + model access).
+Speaker diarization plugin — assigns speaker labels to audio segments.
+Uses pyannote/speaker-diarization-3.1 via pyannote.audio 4.x.
 Default OFF — enable with --diarize flag.
 """
 
@@ -17,7 +17,7 @@ class Diarizer:
         print("[Diarizer] Loading pyannote pipeline...")
         self.pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=config.hf_token,
+            token=config.hf_token,
         )
         self.pipeline.to(torch.device("cuda"))
         print("[Diarizer] Pipeline loaded")
@@ -43,22 +43,21 @@ class Diarizer:
             })
         return segments
 
-    def assign_speakers_to_transcript(
-        self,
-        transcript_segments: list[dict],
-        diarization_segments: list[dict],
-    ) -> list[dict]:
+    def get_dominant_speaker(
+        self, audio: np.ndarray, sample_rate: int = 16000
+    ) -> str:
         """
-        Assign speaker labels to Whisper transcript segments.
-        Uses midpoint matching.
+        Run diarization and return the speaker who talked the most.
+        Used for assigning a single speaker label to an endpoint utterance.
         """
-        result = []
-        for t_seg in transcript_segments:
-            mid_time = (t_seg["start"] + t_seg["end"]) / 2
-            speaker = "Unknown"
-            for d_seg in diarization_segments:
-                if d_seg["start"] <= mid_time <= d_seg["end"]:
-                    speaker = d_seg["speaker"]
-                    break
-            result.append({**t_seg, "speaker": speaker})
-        return result
+        segments = self.diarize(audio, sample_rate)
+        if not segments:
+            return ""
+
+        # Sum duration per speaker
+        durations: dict[str, float] = {}
+        for seg in segments:
+            dur = seg["end"] - seg["start"]
+            durations[seg["speaker"]] = durations.get(seg["speaker"], 0) + dur
+
+        return max(durations, key=durations.get)

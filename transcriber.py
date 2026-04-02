@@ -32,6 +32,7 @@ class Transcriber:
         self._emitted: list[str] = []   # words already sent as "final"
         self._prev: list[str] = []      # words from the previous transcription
         self._prompt = ""               # initial_prompt for Whisper context
+        self.last_endpoint_audio: np.ndarray | None = None  # audio snapshot for diarization
 
     # ------------------------------------------------------------------ #
     # Public API (called from the audio processing thread)
@@ -111,6 +112,8 @@ class Transcriber:
         self._emitted = []
         self._prev = []
         with self._lock:
+            # Save audio snapshot for diarization before clearing
+            self.last_endpoint_audio = self._buf.copy() if len(self._buf) > 0 else None
             self._buf = np.array([], dtype=np.float32)
             self._dirty = False
 

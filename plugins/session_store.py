@@ -16,6 +16,7 @@ class TranscriptEntry:
     text: str
     translated: str = ""
     speaker: str = ""
+    msg_id: int = 0
 
 
 @dataclass
@@ -24,12 +25,13 @@ class Session:
     start_time: float
     entries: list[TranscriptEntry] = field(default_factory=list)
 
-    def add_entry(self, text: str, translated: str = "", speaker: str = ""):
+    def add_entry(self, text: str, translated: str = "", speaker: str = "", msg_id: int = 0):
         self.entries.append(TranscriptEntry(
             timestamp=time.time(),
             text=text,
             translated=translated,
             speaker=speaker,
+            msg_id=msg_id,
         ))
 
     def update_translation(self, original: str, translated: str):
@@ -37,6 +39,13 @@ class Session:
         for entry in reversed(self.entries):
             if entry.text == original and not entry.translated:
                 entry.translated = translated
+                return
+
+    def update_speaker(self, msg_id: int, speaker: str):
+        """Update the speaker label for an entry by msg_id."""
+        for entry in reversed(self.entries):
+            if entry.msg_id == msg_id:
+                entry.speaker = speaker
                 return
 
     def get_full_text(self, include_translation: bool = False) -> str:

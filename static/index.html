@@ -248,6 +248,25 @@
         }
       }
 
+      } else if (data.type === 'speaker_update') {
+        // Post-hoc speaker label update
+        const target = data.msg_id
+          ? container.querySelector(`[data-msg-id="${data.msg_id}"]`)
+          : null;
+        if (target) {
+          // Prepend speaker label if not already present
+          let existing = target.querySelector('.speaker-label');
+          if (existing) {
+            existing.textContent = data.speaker;
+          } else {
+            const badge = document.createElement('span');
+            badge.className = 'speaker-label';
+            badge.textContent = data.speaker;
+            target.prepend(badge);
+          }
+        }
+      }
+
       // Enforce 25-line limit
       while (container.children.length > MAX_LINES) {
         container.removeChild(container.firstChild);

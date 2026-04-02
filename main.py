@@ -40,9 +40,48 @@ def main():
         set_summarizer(summarizer)
         print(f"[Summarizer] Enabled ({config.summary_model})")
 
-    # Translation flush loop (runs in background on the event loop)
-    translation_queue: Queue = Queue()
+    # Optional: diarizer (model loaded only when enabled)
+    diarizer = None
+    if config.enable_diarization:
+        try:
+            from plugins.diarizer import Diarizer
+            diarizer = Diarizer(config)
+        except Exception as e:
+            print(f"[Diarizer] Failed to load, continuing without diarization: {e}")
 
+    # --- Diarization: async post-hoc speaker labeling ---
+    # Queue of (msg_id, audio_copy) to diarize in background
+    diarize_queue: Queue = Queue()
+
+    async def diarization_loop():
+        """Process diarization requests without blocking transcription."""
+        if not diarizer:
+            return
+        while True:
+            if not diarize_queue.empty():
+                try:
+                    msg_id, audio = diarize_queue.get_nowait()
+                    # Run diarization in a thread to avoid blocking the event loop
+                    speaker = await asyncio.to_thread(
+                        diarizer.get_dominant_speaker, audio, config.sample_rate
+                    )
+                    if speaker:
+                        print(f"[Diarizer] msg_id={msg_id} -> {speaker}")
+                        enqueue_message({
+                            "type": "speaker_update",
+                            "msg_id": msg_id,
+                            "speaker": speaker,
+                        })
+                        # Update session entry
+                        session.update_speaker(msg_id, speaker)
+                except Exception as e:
+                    print(f"[Diarizer] Error: {e}")
+            await asyncio.sleep(0.1)
+
+    if diarizer:
+        register_startup_task(diarization_loop)
+
+    # --- Translation flush loop ---
     async def translation_loop():
         """Periodically flush the translator batch buffer."""
         if not translator:
@@ -73,18 +112,22 @@ def main():
         audio_sec = result.get("audio_sec", "?")
         print(f"[{tag}] ({latency}ms, {audio_sec}s buf) {result['text']}")
 
-        # Assign a unique ID to final messages for translation pairing
+        # Assign a unique ID to final messages
         if result["type"] == "final":
             _msg_id_counter[0] += 1
             result["msg_id"] = _msg_id_counter[0]
 
         enqueue_message(result)
 
-        # Store final text in session
+        # Store final text in session and trigger plugins
         if result["type"] == "final":
-            session.add_entry(result["text"], speaker=result.get("speaker", ""))
+            session.add_entry(result["text"], speaker="", msg_id=result["msg_id"])
             if translator:
                 translator.add_to_batch(result["text"], msg_id=result["msg_id"])
+            # Queue diarization (non-blocking)
+            if diarizer and transcriber.last_endpoint_audio is not None:
+                diarize_queue.put((result["msg_id"], transcriber.last_endpoint_audio))
+                transcriber.last_endpoint_audio = None
 
     # Initialize modules
     capture = AudioCapture(config, audio_queue)
@@ -123,7 +166,6 @@ def main():
     # Cleanup
     stop_event.set()
     capture.stop()
-    # Auto-save session on exit
     path = session.save(config.sessions_dir)
     print(f"[Session] Saved to {path}")
     print("Done.")

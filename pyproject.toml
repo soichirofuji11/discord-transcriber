@@ -20,7 +20,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-diarization = ["pyannote.audio>=3.1.0"]
+diarization = ["pyannote.audio>=4.0.0,<4.0.2"]
 
-[tool.uv]
-extra-index-url = ["https://download.pytorch.org/whl/cu124"]
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch" }]
+torchaudio = [{ index = "pytorch" }]
