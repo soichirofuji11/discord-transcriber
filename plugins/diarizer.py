@@ -6,7 +6,24 @@ Default OFF — enable with --diarize flag.
 
 import numpy as np
 import torch
-from pyannote.audio import Pipeline
+import torch.serialization
+
+# Register safe globals BEFORE loading any pyannote checkpoint.
+# pyannote checkpoints contain these custom classes in pickle format.
+# PyTorch 2.6+ defaults weights_only=True and rejects them without this.
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from omegaconf import DictConfig, ListConfig
+
+torch.serialization.add_safe_globals([
+    torch.torch_version.TorchVersion,
+    Specifications,
+    Problem,
+    Resolution,
+    DictConfig,
+    ListConfig,
+])
+
+from pyannote.audio import Pipeline  # noqa: E402
 
 from config import Config
 
@@ -54,7 +71,6 @@ class Diarizer:
         if not segments:
             return ""
 
-        # Sum duration per speaker
         durations: dict[str, float] = {}
         for seg in segments:
             dur = seg["end"] - seg["start"]

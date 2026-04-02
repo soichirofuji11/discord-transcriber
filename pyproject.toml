@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-diarization = ["pyannote.audio>=4.0.0,<4.0.2"]
+diarization = ["pyannote.audio>=4.0.0,<4.0.2", "omegaconf>=2.3.0"]
 
 [[tool.uv.index]]
 name = "pytorch"
