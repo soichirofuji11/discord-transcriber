@@ -12,13 +12,19 @@ from server import app, enqueue_message
 
 
 def main():
-    config = Config()
+    config = Config.from_args()
     audio_queue: Queue = Queue()
+
+    print(f"[Config] model={config.model_size}, beam={config.beam_size}, "
+          f"interval={config.transcribe_interval_sec}s, "
+          f"context={config.condition_on_previous_text}")
 
     def on_text(result):
         """Called from the processing thread."""
         tag = "FINAL" if result["type"] == "final" else "partial"
-        print(f"[{tag}] {result['text']}")
+        latency = result.get("latency_ms", "?")
+        audio_sec = result.get("audio_sec", "?")
+        print(f"[{tag}] ({latency}ms, {audio_sec}s buf) {result['text']}")
         enqueue_message(result)
 
     # Initialize modules
@@ -53,7 +59,7 @@ def main():
     print(f"Open http://{config.host}:{config.port} in your browser")
 
     # Run FastAPI server (blocks until shutdown)
-    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
+    uvicorn.run(app, host=config.host, port=config.port, log_level="warning")
 
     # Cleanup
     stop_event.set()

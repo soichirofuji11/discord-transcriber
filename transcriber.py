@@ -48,6 +48,7 @@ class Transcriber:
                 return  # Skip if less than 0.5s
             audio = self.audio_buffer.copy()
 
+        t0 = time.perf_counter()
         segments, info = self.model.transcribe(
             audio,
             language=self.config.language,
@@ -66,6 +67,8 @@ class Transcriber:
             text_parts.append(segment.text.strip())
 
         full_text = " ".join(text_parts)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        audio_dur = len(audio) / self.config.sample_rate
 
         if full_text:
             self.callback(
@@ -74,6 +77,8 @@ class Transcriber:
                     "text": full_text,
                     "language": info.language,
                     "language_probability": info.language_probability,
+                    "latency_ms": round(elapsed_ms),
+                    "audio_sec": round(audio_dur, 1),
                 }
             )
 

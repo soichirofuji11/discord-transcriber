@@ -65,18 +65,3 @@ async def on_startup():
 async def root():
     with open("static/index.html", encoding="utf-8") as f:
         return HTMLResponse(f.read())
-
-
-@app.get("/test")
-async def test_broadcast():
-    """Hit this endpoint to test if WebSocket broadcast works."""
-    import traceback
-    try:
-        msg = {"type": "final", "text": "TEST: WebSocket is working!",
-               "language": "en", "language_probability": 1.0}
-        print(f"[test] connected_clients: {len(connected_clients)}")
-        await _broadcast(msg)
-        return {"status": "sent", "clients": len(connected_clients)}
-    except Exception as e:
-        traceback.print_exc()
-        return {"status": "error", "error": str(e)}

@@ -43,6 +43,11 @@
   .fading {
     opacity: 0;
   }
+  .latency {
+    font-size: 11px;
+    color: #666;
+    margin-left: 8px;
+  }
   #status {
     position: fixed;
     top: 8px;
@@ -94,7 +99,14 @@
             partialEl.className = 'line partial';
             container.appendChild(partialEl);
           }
-          partialEl.textContent = data.text;
+          partialEl.innerHTML = '';
+          partialEl.appendChild(document.createTextNode(data.text));
+          if (data.latency_ms != null) {
+            const badge = document.createElement('span');
+            badge.className = 'latency';
+            badge.textContent = `${data.latency_ms}ms`;
+            partialEl.appendChild(badge);
+          }
         } else if (data.type === 'final') {
           // Replace partial with final
           if (partialEl) {
@@ -103,7 +115,13 @@
           }
           const el = document.createElement('div');
           el.className = 'line final';
-          el.textContent = data.text;
+          el.appendChild(document.createTextNode(data.text));
+          if (data.latency_ms != null) {
+            const badge = document.createElement('span');
+            badge.className = 'latency';
+            badge.textContent = `${data.latency_ms}ms`;
+            el.appendChild(badge);
+          }
           container.appendChild(el);
 
           // Auto-fade after timeout
