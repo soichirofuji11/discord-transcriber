@@ -1,5 +1,4 @@
 """Discord VC real-time transcription tool — entry point."""
-import asyncio
 import threading
 from queue import Queue
 
@@ -9,21 +8,18 @@ from config import Config
 from audio_capture import AudioCapture
 from vad import VADProcessor
 from transcriber import Transcriber
-from server import app, broadcast
+from server import app, enqueue_message
 
 
 def main():
     config = Config()
     audio_queue: Queue = Queue()
 
-    # Event loop for the async server (set early so on_text can use it)
-    loop = asyncio.new_event_loop()
-
     def on_text(result):
-        """Called from the processing thread — schedule broadcast on the event loop."""
+        """Called from the processing thread."""
         tag = "FINAL" if result["type"] == "final" else "partial"
         print(f"[{tag}] {result['text']}")
-        asyncio.run_coroutine_threadsafe(broadcast(result), loop)
+        enqueue_message(result)
 
     # Initialize modules
     capture = AudioCapture(config, audio_queue)
@@ -56,13 +52,8 @@ def main():
     print(f"Listening on loopback audio...")
     print(f"Open http://{config.host}:{config.port} in your browser")
 
-    # Run FastAPI server on the event loop (blocks until shutdown)
-    uv_config = uvicorn.Config(
-        app, host=config.host, port=config.port, log_level="warning"
-    )
-    server = uvicorn.Server(uv_config)
-
-    loop.run_until_complete(server.serve())
+    # Run FastAPI server (blocks until shutdown)
+    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
 
     # Cleanup
     stop_event.set()
