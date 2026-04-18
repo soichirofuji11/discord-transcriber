@@ -48,6 +48,10 @@ class Session:
                 entry.speaker = speaker
                 return
 
+    def remove_entry(self, msg_id: int):
+        """Remove an entry by msg_id (used when splitting into multiple entries)."""
+        self.entries = [e for e in self.entries if e.msg_id != msg_id]
+
     def get_full_text(self, include_translation: bool = False) -> str:
         """Return all text joined for summarization."""
         lines = []

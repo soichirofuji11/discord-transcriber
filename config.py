@@ -17,6 +17,7 @@ class Config:
     beam_size: int = 1
 
     # --- Audio Capture ---
+    audio_source: str = "loopback"  # "loopback", "mic", or "both"
     sample_rate: int = 16000
     channels: int = 1
     block_duration_ms: int = 100
@@ -24,7 +25,7 @@ class Config:
     # --- VAD ---
     vad_threshold: float = 0.5
     min_speech_duration_ms: int = 250
-    min_silence_duration_ms: int = 1000
+    min_silence_duration_ms: int = 500
 
     # --- Buffer ---
     max_buffer_duration_sec: float = 30.0
@@ -63,7 +64,7 @@ class Config:
         parser.add_argument("--fast", action="store_true",
                             help="Low-latency preset: beam=1, interval=0.5s, distil-large-v3")
         parser.add_argument("--model", default=None,
-                            choices=["large-v3", "distil-large-v3", "medium", "small", "base", "tiny"],
+                            choices=["large-v3", "large-v3-turbo", "distil-large-v3", "distil-large-v3.5", "medium", "small", "base", "tiny"],
                             help="Whisper model size")
         parser.add_argument("--beam-size", type=int, default=None,
                             help="Beam size (1=greedy/fast, 5=accurate)")
@@ -87,6 +88,9 @@ class Config:
                             help="Enable summary feature")
         parser.add_argument("--diarize", action="store_true",
                             help="Enable speaker diarization")
+        parser.add_argument("--audio-source", default=cls.audio_source,
+                            choices=["loopback", "mic", "both"],
+                            help="Audio source: loopback (system audio), mic, or both")
         args = parser.parse_args()
 
         # Environment variables
@@ -122,6 +126,7 @@ class Config:
             model_size=model,
             beam_size=beam_size,
             language=args.language,
+            audio_source=args.audio_source,
             transcribe_interval_sec=interval,
             condition_on_previous_text=not args.no_context,
             max_buffer_duration_sec=args.max_buffer,

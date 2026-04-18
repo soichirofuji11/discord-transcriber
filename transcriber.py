@@ -14,6 +14,7 @@ class Transcriber:
     def __init__(self, config: Config, on_text: Callable[[dict], None]):
         self.config = config
         self.on_text = on_text
+        self._use_word_timestamps = config.enable_diarization
 
         print(f"[Transcriber] Loading model '{config.model_size}' "
               f"(device={config.device}, compute_type={config.compute_type})...")
@@ -23,6 +24,8 @@ class Transcriber:
             compute_type=config.compute_type,
         )
         print("[Transcriber] Model loaded")
+        if self._use_word_timestamps:
+            print("[Transcriber] word_timestamps=True (diarization enabled)")
 
         self._buf = np.array([], dtype=np.float32)
         self._lock = threading.Lock()
@@ -33,6 +36,7 @@ class Transcriber:
         self._prev: list[str] = []      # words from the previous transcription
         self._prompt = ""               # initial_prompt for Whisper context
         self.last_endpoint_audio: np.ndarray | None = None  # audio snapshot for diarization
+        self.last_word_timestamps: list[dict] | None = None  # word timestamps for diarization
 
     # ------------------------------------------------------------------ #
     # Public API (called from the audio processing thread)
@@ -73,12 +77,21 @@ class Transcriber:
             vad_filter=False,
             initial_prompt=self._prompt if self.config.condition_on_previous_text else None,
             condition_on_previous_text=self.config.condition_on_previous_text,
+            word_timestamps=self._use_word_timestamps,
         )
         words: list[str] = []
+        word_ts: list[dict] = []  # [{"word": str, "start": float, "end": float}, ...]
         for seg in segments:
-            t = seg.text.strip()
-            if t:
-                words.extend(t.split())
+            if self._use_word_timestamps and seg.words:
+                for w in seg.words:
+                    word_text = w.word.strip()
+                    if word_text:
+                        words.append(word_text)
+                        word_ts.append({"word": word_text, "start": w.start, "end": w.end})
+            else:
+                t = seg.text.strip()
+                if t:
+                    words.extend(t.split())
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000)
         audio_sec = round(len(audio) / self.config.sample_rate, 1)
@@ -94,7 +107,7 @@ class Transcriber:
         )
 
         if is_endpoint:
-            self._handle_endpoint(words, meta)
+            self._handle_endpoint(words, meta, word_ts)
         else:
             self._handle_partial(words, meta)
 
@@ -102,11 +115,12 @@ class Transcriber:
     # Internal
     # ------------------------------------------------------------------ #
 
-    def _handle_endpoint(self, words: list[str], meta: dict):
+    def _handle_endpoint(self, words: list[str], meta: dict, word_ts: list[dict] = None):
         """Emit the full utterance as one final line, then reset."""
-        # Save audio snapshot BEFORE callback (callback reads it for diarization)
+        # Save audio snapshot and word timestamps BEFORE callback (for diarization)
         with self._lock:
             self.last_endpoint_audio = self._buf.copy() if len(self._buf) > 0 else None
+            self.last_word_timestamps = word_ts if word_ts else None
 
         if words:
             self.on_text({"type": "final", "text": " ".join(words), **meta})

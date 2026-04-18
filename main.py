@@ -25,7 +25,8 @@ def main():
 
     print(f"[Config] model={config.model_size}, beam={config.beam_size}, "
           f"interval={config.transcribe_interval_sec}s, "
-          f"context={config.condition_on_previous_text}")
+          f"context={config.condition_on_previous_text}, "
+          f"audio={config.audio_source}")
 
     # Session store
     session = Session.new()
@@ -55,8 +56,8 @@ def main():
         except Exception as e:
             print(f"[Diarizer] Failed to load, continuing without diarization: {e}")
 
-    # --- Diarization: async post-hoc speaker labeling ---
-    # Queue of (msg_id, audio_copy) to diarize in background
+    # --- Diarization: async post-hoc speaker labeling + split ---
+    # Queue of (msg_id, audio_copy, word_timestamps_or_None) to diarize in background
     diarize_queue: Queue = Queue()
 
     async def diarization_loop():
@@ -66,20 +67,66 @@ def main():
         while True:
             if not diarize_queue.empty():
                 try:
-                    msg_id, audio = diarize_queue.get_nowait()
-                    # Run diarization in a thread to avoid blocking the event loop
-                    speaker = await asyncio.to_thread(
-                        diarizer.get_speaker_for_segment, audio
-                    )
-                    if speaker:
-                        print(f"[Diarizer] msg_id={msg_id} -> {speaker}")
-                        enqueue_message({
-                            "type": "speaker_update",
-                            "msg_id": msg_id,
-                            "speaker": speaker,
-                        })
-                        # Update session entry
-                        session.update_speaker(msg_id, speaker)
+                    msg_id, audio, word_ts = diarize_queue.get_nowait()
+
+                    if word_ts:
+                        # Use word-level split
+                        parts = await asyncio.to_thread(
+                            diarizer.diarize_and_split, audio, word_ts
+                        )
+
+                        if len(parts) > 1:
+                            # Multiple speakers - split the line
+                            print(f"[Diarizer] msg_id={msg_id} -> split into {len(parts)} parts")
+                            # Assign new msg_ids for the split parts
+                            split_data = []
+                            for part in parts:
+                                _msg_id_counter[0] += 1
+                                new_id = _msg_id_counter[0]
+                                split_data.append({
+                                    "msg_id": new_id,
+                                    "speaker": part["speaker"],
+                                    "text": part["text"],
+                                })
+                                # Add split entries to session
+                                session.add_entry(
+                                    part["text"],
+                                    speaker=part["speaker"],
+                                    msg_id=new_id,
+                                )
+
+                            # Remove the original unsplit entry from session
+                            session.remove_entry(msg_id)
+
+                            enqueue_message({
+                                "type": "split",
+                                "original_msg_id": msg_id,
+                                "parts": split_data,
+                            })
+                        else:
+                            # Single speaker - just update the label
+                            speaker = parts[0]["speaker"] if parts else ""
+                            if speaker:
+                                print(f"[Diarizer] msg_id={msg_id} -> {speaker}")
+                                enqueue_message({
+                                    "type": "speaker_update",
+                                    "msg_id": msg_id,
+                                    "speaker": speaker,
+                                })
+                                session.update_speaker(msg_id, speaker)
+                    else:
+                        # No word timestamps - fallback to simple speaker label
+                        speaker = await asyncio.to_thread(
+                            diarizer.get_speaker_for_segment, audio
+                        )
+                        if speaker:
+                            print(f"[Diarizer] msg_id={msg_id} -> {speaker}")
+                            enqueue_message({
+                                "type": "speaker_update",
+                                "msg_id": msg_id,
+                                "speaker": speaker,
+                            })
+                            session.update_speaker(msg_id, speaker)
                 except Exception as e:
                     print(f"[Diarizer] Error: {e}")
             await asyncio.sleep(0.1)
@@ -113,10 +160,6 @@ def main():
 
     def on_text(result):
         """Called from the processing thread."""
-        tag = "FINAL" if result["type"] == "final" else "partial"
-        latency = result.get("latency_ms", "?")
-        audio_sec = result.get("audio_sec", "?")
-        print(f"[{tag}] ({latency}ms, {audio_sec}s buf) {result['text']}")
 
         # Assign a unique ID to final messages
         if result["type"] == "final":
@@ -132,8 +175,13 @@ def main():
                 translator.add_to_batch(result["text"], msg_id=result["msg_id"])
             # Queue diarization (non-blocking)
             if diarizer and transcriber.last_endpoint_audio is not None:
-                diarize_queue.put((result["msg_id"], transcriber.last_endpoint_audio))
+                diarize_queue.put((
+                    result["msg_id"],
+                    transcriber.last_endpoint_audio,
+                    transcriber.last_word_timestamps,
+                ))
                 transcriber.last_endpoint_audio = None
+                transcriber.last_word_timestamps = None
 
     # Initialize modules
     capture = AudioCapture(config, audio_queue)
@@ -163,11 +211,11 @@ def main():
     processing_thread.start()
 
     capture.start()
-    print(f"Listening on loopback audio...")
+    print(f"Listening on {config.audio_source} audio...")
     print(f"Open http://{config.host}:{config.port} in your browser")
 
     # Run FastAPI server (blocks until shutdown)
-    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
+    uvicorn.run(app, host=config.host, port=config.port, log_level="warning")
 
     # Cleanup
     stop_event.set()

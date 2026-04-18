@@ -311,6 +311,39 @@
           container.appendChild(el);
         }
 
+      } else if (data.type === 'split') {
+        // Replace a single line with multiple speaker-split lines (instant, no animation)
+        const target = data.original_msg_id
+          ? container.querySelector(`[data-msg-id="${data.original_msg_id}"]`)
+          : null;
+        if (target && data.parts) {
+          // Also collect any translation lines that follow the original
+          const translations = [];
+          let sibling = target.nextSibling;
+          while (sibling && sibling.classList && sibling.classList.contains('translation')) {
+            translations.push(sibling);
+            sibling = sibling.nextSibling;
+          }
+
+          // Insert new split lines before the original
+          for (const part of data.parts) {
+            const el = document.createElement('div');
+            el.className = 'line final';
+            el.dataset.msgId = part.msg_id;
+            let content = '';
+            if (part.speaker) {
+              content += `<span class="speaker-label">${escHtml(part.speaker)}</span>`;
+            }
+            content += escHtml(part.text);
+            el.innerHTML = content;
+            target.before(el);
+          }
+
+          // Remove the original line and its translations
+          for (const tr of translations) tr.remove();
+          target.remove();
+        }
+
       } else if (data.type === 'speaker_update') {
         const target = data.msg_id
           ? container.querySelector(`[data-msg-id="${data.msg_id}"]`)
